@@ -41,7 +41,7 @@ python main.py
 
 ## How the bot plays
 
-The bot does a shallow search over a simple evaluation (material plus small positional bonuses), then chooses its move on purpose imperfectly. Strength is controlled by a few settings derived from a target Elo (see `elo_params` in `main.py`):
+The bot does a shallow search over a simple evaluation (material plus small positional bonuses), then chooses its move on purpose imperfectly. Strength is controlled by a few settings derived from a target Elo (see `strength_params` in `patzer/engine/strength.py`):
 
 | Setting | What it does |
 |---|---|
@@ -50,21 +50,21 @@ The bot does a shallow search over a simple evaluation (material plus small posi
 | **Piece blunders** | A very small chance (`PIECE_BLUNDER_RATE`) of giving up a piece in one move. Never hangs a queen or allows mate. |
 | **Tie window** | Normal moves are chosen among near-equal best moves, so real material gains are always taken. |
 
-The Elo selector is locked at 1000 for now. To unlock it, set `ELO_SELECTOR_ENABLED = True` in `main.py`.
+The Elo selector is locked at 1000 for now. To unlock it, set `ELO_SELECTOR_ENABLED = True` in `patzer/config.py`.
 
 ## Calibration
 
-The mapping from setting to real strength is currently a hand-tuned estimate. `calibrate.py` measures it by playing many games against Stockfish (limited with `UCI_Elo`) or against another bot setting, alternating colors on identical random openings, and converting the score into an Elo estimate with a 95% confidence interval.
+The mapping from setting to real strength is currently a hand-tuned estimate. `patzer/tools/calibrate.py` measures it by playing many games against Stockfish (limited with `UCI_Elo`) or against another bot setting, alternating colors on identical random openings, and converting the score into an Elo estimate with a 95% confidence interval.
 
 ```bash
 # quick smoke test
-python calibrate.py --stockfish "path/to/stockfish" --bot-elo 1340 --games 2 --workers 1
+python -m patzer.tools.calibrate --stockfish "path/to/stockfish" --bot-elo 1340 --games 2 --workers 1
 
 # a real sweep, saving games for review
-python calibrate.py --stockfish "path/to/stockfish" --bot-elo 1340 1500 1700 --games 40 --pgn games.pgn
+python -m patzer.tools.calibrate --stockfish "path/to/stockfish" --bot-elo 1340 1500 1700 --games 40 --pgn games.pgn
 
 # measure a low setting against an already-calibrated bot anchor
-python calibrate.py --bot-elo 1000 --opp-bot 1340 --opp-rating 1340 --games 40
+python -m patzer.tools.calibrate --bot-elo 1000 --opp-bot 1340 --opp-rating 1340 --games 40
 ```
 
 Results are appended to `calibration_results.csv`. Install Stockfish from [stockfishchess.org](https://stockfishchess.org/download/) (or `brew install stockfish` / `sudo apt install stockfish`).
@@ -77,12 +77,15 @@ Results are appended to `calibration_results.csv`. Install Stockfish from [stock
 ## Project layout
 
 ```
-main.py             GUI app and the built-in engine
-calibrate.py        Strength measurement against Stockfish or another bot setting
+main.py             Launcher (same as `python -m patzer`)
+patzer/engine/      Evaluation, search (with quiescence) and strength settings
+patzer/backends/    Move providers behind one interface (built-in engine now)
+patzer/gui/         The tkinter board and app
+patzer/config.py    Default Elo, dropdown options, animation settings
+patzer/tools/       Calibration against Stockfish or another bot setting
+tests/              pytest checks (run `pytest`)
 requirements.txt    Python dependencies
 ```
-
-A planned restructure will split the engine, backends, GUI and tools into separate modules.
 
 ## Roadmap
 
