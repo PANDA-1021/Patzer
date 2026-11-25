@@ -23,7 +23,7 @@ Most chess engines are built to play the best move. Patzer is built to play a *b
 Requires Python 3.10 or newer. `tkinter` ships with most Python installs (on some Linux distros: `sudo apt install python3-tk`).
 
 ```bash
-git clone <your-repo-url> patzer
+git clone <[your-repo-url](https://github.com/PANDA-1021/Patzer/)> patzer
 cd patzer
 pip install -r requirements.txt
 python main.py
