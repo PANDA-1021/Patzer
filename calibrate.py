@@ -26,6 +26,7 @@ import csv
 import math
 import os
 import random
+import shutil
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -38,7 +39,8 @@ import chess.pgn
 
 from main import EloBot
 
-DEFAULT_STOCKFISH = r"C:\Users\Abdhullah ShiFaaN\Documents\Stockfish\stockfish-windows-x86-64-universal.exe"
+# Set the STOCKFISH_PATH environment variable once, or pass --stockfish each time.
+DEFAULT_STOCKFISH = os.environ.get("STOCKFISH_PATH") or shutil.which("stockfish") or ""
 SF_MIN_ELO, SF_MAX_ELO = 1320, 3190
 
 
@@ -140,7 +142,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--bot-elo", type=int, nargs="+", default=[1340],
                     help="bot settings to test (default: 1340)")
     ap.add_argument("--games", type=int, default=20, help="games per setting; rounded up to even")
-    ap.add_argument("--stockfish", default=DEFAULT_STOCKFISH, help="path to the Stockfish executable")
+    ap.add_argument("--stockfish", default=DEFAULT_STOCKFISH, help="path to the Stockfish executable (default: $STOCKFISH_PATH, then PATH)")
     ap.add_argument("--sf-elo", type=int, default=SF_MIN_ELO, help="Stockfish UCI_Elo (1320-3190)")
     ap.add_argument("--movetime", type=float, default=0.1, help="Stockfish seconds per move")
     ap.add_argument("--opp-bot", type=int, default=None,
@@ -165,8 +167,9 @@ def main() -> None:
         opp_rating = args.opp_rating if args.opp_rating is not None else float(args.opp_bot)
         opp_label = f"Bot@{args.opp_bot} (assumed {opp_rating:.0f})"
     else:
-        if not Path(args.stockfish).is_file():
-            sys.exit(f"Stockfish not found at: {args.stockfish}\nPass the right path with --stockfish")
+        if not args.stockfish or not Path(args.stockfish).is_file():
+            sys.exit(f"Stockfish not found (looked for: {args.stockfish or 'nothing'}).\n"
+                     "Pass the path with --stockfish, or set the STOCKFISH_PATH environment variable.")
         sf_elo = max(SF_MIN_ELO, min(SF_MAX_ELO, args.sf_elo))
         if sf_elo != args.sf_elo:
             print(f"Note: --sf-elo clamped to {sf_elo} (Stockfish supports {SF_MIN_ELO}-{SF_MAX_ELO}).")
