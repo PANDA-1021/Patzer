@@ -6,9 +6,9 @@ bot setting, alternates colours on identical random openings, and converts the
 match score into an Elo estimate with a 95% confidence interval.
 
 Examples (run from the project folder):
-    python calibrate.py --games 2 --workers 1 --bot-elo 1340      # quick smoke test
-    python calibrate.py --bot-elo 1340 1500 1700 --games 40
-    python calibrate.py --bot-elo 1000 --opp-bot 1340 --opp-rating 1340 --games 40
+    python -m patzer.tools.calibrate --games 2 --workers 1 --bot-elo 1340      # quick smoke test
+    python -m patzer.tools.calibrate --bot-elo 1340 1500 1700 --games 40
+    python -m patzer.tools.calibrate --bot-elo 1000 --opp-bot 1340 --opp-rating 1340 --games 40
 
 Notes
   * Stockfish's UCI_Elo floor is 1320. A bot far below the opponent scores ~0%,
@@ -37,7 +37,8 @@ import chess
 import chess.engine
 import chess.pgn
 
-from main import EloBot
+from patzer.backends import make_backend
+from patzer.tools.stats import summarize
 
 # Set the STOCKFISH_PATH environment variable once, or pass --stockfish each time.
 DEFAULT_STOCKFISH = os.environ.get("STOCKFISH_PATH") or shutil.which("stockfish") or ""
@@ -45,11 +46,11 @@ SF_MIN_ELO, SF_MAX_ELO = 1320, 3190
 
 
 # ----------------------------------------------------------------- one game --
-def play_game(task: dict) -> tuple[float, str]:
-    """Play one game. Returns (score from the bot's point of view, PGN text)."""
+def play_game(task: dict) -> tuple[float, str, str, int]:
+    """Play one game. Returns (bot's score, PGN text, how it ended, plies played)."""
     random.seed(task["seed"])
     board = chess.Board(task["fen"])
-    bot = EloBot(task["bot_elo"])
+    bot = make_backend(task["bot_elo"])
     bot_color = task["bot_color"]
     opp = task["opp"]
 
@@ -60,7 +61,7 @@ def play_game(task: dict) -> tuple[float, str]:
                           "UCI_LimitStrength": True, "UCI_Elo": opp["elo"]})
         limit = chess.engine.Limit(time=task["movetime"])
     else:
-        opp_bot = EloBot(opp["setting"])
+        opp_bot = make_backend(opp["setting"])
 
     try:
         plies = 0
@@ -93,9 +94,14 @@ def play_game(task: dict) -> tuple[float, str]:
     game.headers["White"] = bot_name if bot_white else opp_name
     game.headers["Black"] = opp_name if bot_white else bot_name
     game.headers["Result"] = result
-    if not finished:
+    if finished:
+        outcome = board.outcome(claim_draw=True)
+        ended = outcome.termination.name.lower() if outcome else "unknown"
+    else:
+        ended = "move_limit"
         game.headers["Termination"] = "adjudicated draw (move limit)"
-    return score, str(game)
+    game.headers["Termination"] = game.headers.get("Termination", ended)
+    return score, str(game), ended, plies
 
 
 def random_opening(plies: int, rng: random.Random) -> str:
@@ -107,33 +113,6 @@ def random_opening(plies: int, rng: random.Random) -> str:
             b.push(rng.choice(list(b.legal_moves)))
         if not b.is_game_over():
             return b.fen()
-
-
-# --------------------------------------------------------------- statistics --
-def elo_from_score(p: float) -> float:
-    return -400.0 * math.log10(1.0 / p - 1.0)
-
-
-def summarize(scores: list[float], opp_rating: float) -> dict:
-    """Elo estimate and 95% CI. One virtual draw is added so 0%/100% stay finite."""
-    n = len(scores)
-    wins = sum(1 for s in scores if s == 1.0)
-    draws = sum(1 for s in scores if s == 0.5)
-    losses = n - wins - draws
-    padded = scores + [0.5]
-    m = sum(padded) / len(padded)
-    var = sum((s - m) ** 2 for s in padded) / (len(padded) - 1)
-    se = math.sqrt(var / len(padded))
-    lo, hi = max(0.01, m - 1.96 * se), min(0.99, m + 1.96 * se)
-    m = min(0.99, max(0.01, m))
-    return {
-        "games": n, "wins": wins, "draws": draws, "losses": losses,
-        "score": sum(scores) / n if n else 0.0,
-        "elo": opp_rating + elo_from_score(m),
-        "elo_low": opp_rating + elo_from_score(lo),
-        "elo_high": opp_rating + elo_from_score(hi),
-        "saturated": m < 0.1 or m > 0.9,
-    }
 
 
 # --------------------------------------------------------------------- main --
@@ -197,14 +176,18 @@ def main() -> None:
         print(f"=== Bot setting {bot_elo} ===")
         scores: list[float] = []
         pgns: list[str] = []
+        endings: list[tuple[float, str]] = []
+        lengths: list[int] = []
         started = time.time()
         ex = ProcessPoolExecutor(max_workers=args.workers)
         try:
             futures = [ex.submit(play_game, t) for t in tasks]
             for fut in as_completed(futures):
-                score, pgn = fut.result()
+                score, pgn, ended, plies = fut.result()
                 scores.append(score)
                 pgns.append(pgn)
+                endings.append((score, ended))
+                lengths.append(plies)
                 w = sum(1 for s in scores if s == 1.0)
                 d = sum(1 for s in scores if s == 0.5)
                 print(f"  game {len(scores):>3}/{len(tasks)}   W{w} D{d} L{len(scores) - w - d}   "
@@ -220,6 +203,13 @@ def main() -> None:
         r = summarize(scores, opp_rating)
         print(f"  Result: +{r['wins']} ={r['draws']} -{r['losses']}  score {r['score']:.1%}")
         print(f"  Estimated Elo: {r['elo']:.0f}  (95% CI {r['elo_low']:.0f} to {r['elo_high']:.0f})")
+        draws_by = {}
+        for sc, why in endings:
+            if sc == 0.5:
+                draws_by[why] = draws_by.get(why, 0) + 1
+        if draws_by:
+            print("  Draws by reason: " + ", ".join(f"{k} {v}" for k, v in sorted(draws_by.items())))
+        print(f"  Average game length: {sum(lengths) / len(lengths) / 2:.0f} moves")
         if r["saturated"]:
             print("  WARNING: score is near 0% or 100%, so the opponent is too far away to measure "
                   "this setting reliably. Use a closer opponent (see the notes at the top of this file).")

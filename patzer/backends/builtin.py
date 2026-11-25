@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import chess
 
+from patzer.engine.book import book_move
 from patzer.engine.search import score_root_moves
 from patzer.engine.strength import pick_move, strength_params
 
@@ -10,7 +11,8 @@ from patzer.engine.strength import pick_move, strength_params
 class BuiltinBackend:
     name = "Built-in engine"
 
-    def __init__(self, elo: int):
+    def __init__(self, elo: int, use_book: bool = True):
+        self.use_book = use_book
         self.set_elo(elo)
 
     def set_elo(self, elo: int) -> None:
@@ -24,6 +26,10 @@ class BuiltinBackend:
             raise ValueError("no legal moves")
         if len(moves) == 1:
             return moves[0]
+        if self.use_book:
+            move = book_move(board, self.params.book_plies, self.params.book_forget)
+            if move is not None:
+                return move
         scored = score_root_moves(board, self.params.depth)
         return pick_move(scored, self.params)
 

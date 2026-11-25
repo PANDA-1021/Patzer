@@ -23,6 +23,8 @@ class StrengthParams(NamedTuple):
     tie_window    normal moves are picked among moves within this many centipawns
                   of the best one, so real material gains are always taken
     miss_window   soft mistakes are picked within this many centipawns of the best
+    book_plies    stay in the opening book for this many plies (half-moves)
+    book_forget   chance per move of 'forgetting' the book and thinking for itself
 
     Missed tactics (forks, pins, traps) come from the limited search depth.
     """
@@ -31,6 +33,8 @@ class StrengthParams(NamedTuple):
     miss_prob: float
     tie_window: float
     miss_window: float
+    book_plies: int = 10
+    book_forget: float = 0.05
 
 
 def strength_params(elo: int) -> StrengthParams:
@@ -48,6 +52,8 @@ def strength_params(elo: int) -> StrengthParams:
         miss_prob=0.25 * (1 - t) ** 1.2,
         tie_window=15 + 45 * (1 - t),
         miss_window=100 + 100 * (1 - t),
+        book_plies=6 + elo // 250,          # 1000 Elo: 10 plies, 2200 Elo: 14
+        book_forget=0.01 + 0.07 * (1 - t),  # 1000 Elo: about 5% per move
     )
 
 

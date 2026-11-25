@@ -15,7 +15,7 @@ def _seed():
 
 def best_move(fen, elo=1000, tries=30):
     """Most common reply over several tries (the bot is random on purpose)."""
-    bot = make_backend(elo)
+    bot = make_backend(elo, use_book=False)
     board = chess.Board(fen)
     counts = {}
     for _ in range(tries):
@@ -27,7 +27,7 @@ def best_move(fen, elo=1000, tries=30):
 def test_does_not_modify_callers_board():
     board = chess.Board()
     before = board.fen()
-    make_backend(1000).choose_move(board)
+    make_backend(1000, use_book=False).choose_move(board)
     assert board.fen() == before and not board.move_stack
 
 
@@ -49,7 +49,7 @@ def test_takes_free_knight():
 def test_does_not_hang_queen():
     # Qd1 is attacked by nothing now; moving it to a square covered by a pawn would hang it.
     board = chess.Board("rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2")
-    bot = make_backend(1000)
+    bot = make_backend(1000, use_book=False)
     for _ in range(40):
         m = bot.choose_move(board)
         board.push(m)
@@ -68,7 +68,7 @@ def test_handles_promotion():
 
 
 def test_castling_and_en_passant_are_legal_choices():
-    bot = make_backend(1000)
+    bot = make_backend(1000, use_book=False)
     for fen in ("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1",
                 "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1"):
         board = chess.Board(fen)
@@ -79,7 +79,7 @@ def test_castling_and_en_passant_are_legal_choices():
 def test_single_legal_move_is_returned():
     board = chess.Board("k7/2K5/8/8/8/8/8/1R6 b - - 0 1")  # only Ka7 is legal
     assert list(board.legal_moves) == [chess.Move.from_uci("a8a7")]
-    assert make_backend(1000).choose_move(board) == chess.Move.from_uci("a8a7")
+    assert make_backend(1000, use_book=False).choose_move(board) == chess.Move.from_uci("a8a7")
 
 
 def test_quiescence_resolves_pending_recapture():
@@ -94,3 +94,12 @@ def test_mate_score_is_found_at_depth_two():
     board = chess.Board("6k1/5ppp/8/8/8/8/8/R3K3 w - - 0 1")
     scored = dict(score_root_moves(board, 2))
     assert scored[chess.Move.from_uci("a1a8")] >= 1000
+
+
+def test_development_is_preferred_over_edge_pawn_moves():
+    from patzer.engine.evaluation import evaluate
+    developed = chess.Board("rnbqkbnr/pppppppp/8/8/8/5N2/PPPPPPPP/RNBQKB1R b KQkq - 1 1")
+    edge_pawn = chess.Board("rnbqkbnr/pppppppp/8/8/8/P7/1PPPPPPP/RNBQKBNR b KQkq - 0 1")
+    # Black to move in both, so a higher score means a better position for Black:
+    # White having developed a knight should look better for White (worse for Black).
+    assert evaluate(developed) < evaluate(edge_pawn)

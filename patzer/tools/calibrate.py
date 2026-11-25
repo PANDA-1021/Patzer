@@ -46,11 +46,11 @@ SF_MIN_ELO, SF_MAX_ELO = 1320, 3190
 
 
 # ----------------------------------------------------------------- one game --
-def play_game(task: dict) -> tuple[float, str]:
-    """Play one game. Returns (score from the bot's point of view, PGN text)."""
+def play_game(task: dict) -> tuple[float, str, str, int]:
+    """Play one game. Returns (bot's score, PGN text, how it ended, plies played)."""
     random.seed(task["seed"])
     board = chess.Board(task["fen"])
-    bot = make_backend(task["bot_elo"])
+    bot = make_backend(task["bot_elo"], use_book=False)
     bot_color = task["bot_color"]
     opp = task["opp"]
 
@@ -61,7 +61,7 @@ def play_game(task: dict) -> tuple[float, str]:
                           "UCI_LimitStrength": True, "UCI_Elo": opp["elo"]})
         limit = chess.engine.Limit(time=task["movetime"])
     else:
-        opp_bot = make_backend(opp["setting"])
+        opp_bot = make_backend(opp["setting"], use_book=False)
 
     try:
         plies = 0
@@ -94,9 +94,14 @@ def play_game(task: dict) -> tuple[float, str]:
     game.headers["White"] = bot_name if bot_white else opp_name
     game.headers["Black"] = opp_name if bot_white else bot_name
     game.headers["Result"] = result
-    if not finished:
+    if finished:
+        outcome = board.outcome(claim_draw=True)
+        ended = outcome.termination.name.lower() if outcome else "unknown"
+    else:
+        ended = "move_limit"
         game.headers["Termination"] = "adjudicated draw (move limit)"
-    return score, str(game)
+    game.headers["Termination"] = game.headers.get("Termination", ended)
+    return score, str(game), ended, plies
 
 
 def random_opening(plies: int, rng: random.Random) -> str:
@@ -171,14 +176,18 @@ def main() -> None:
         print(f"=== Bot setting {bot_elo} ===")
         scores: list[float] = []
         pgns: list[str] = []
+        endings: list[tuple[float, str]] = []
+        lengths: list[int] = []
         started = time.time()
         ex = ProcessPoolExecutor(max_workers=args.workers)
         try:
             futures = [ex.submit(play_game, t) for t in tasks]
             for fut in as_completed(futures):
-                score, pgn = fut.result()
+                score, pgn, ended, plies = fut.result()
                 scores.append(score)
                 pgns.append(pgn)
+                endings.append((score, ended))
+                lengths.append(plies)
                 w = sum(1 for s in scores if s == 1.0)
                 d = sum(1 for s in scores if s == 0.5)
                 print(f"  game {len(scores):>3}/{len(tasks)}   W{w} D{d} L{len(scores) - w - d}   "
@@ -194,6 +203,13 @@ def main() -> None:
         r = summarize(scores, opp_rating)
         print(f"  Result: +{r['wins']} ={r['draws']} -{r['losses']}  score {r['score']:.1%}")
         print(f"  Estimated Elo: {r['elo']:.0f}  (95% CI {r['elo_low']:.0f} to {r['elo_high']:.0f})")
+        draws_by = {}
+        for sc, why in endings:
+            if sc == 0.5:
+                draws_by[why] = draws_by.get(why, 0) + 1
+        if draws_by:
+            print("  Draws by reason: " + ", ".join(f"{k} {v}" for k, v in sorted(draws_by.items())))
+        print(f"  Average game length: {sum(lengths) / len(lengths) / 2:.0f} moves")
         if r["saturated"]:
             print("  WARNING: score is near 0% or 100%, so the opponent is too far away to measure "
                   "this setting reliably. Use a closer opponent (see the notes at the top of this file).")
