@@ -22,3 +22,6 @@ lc0*/
 *.nnue
 *.pb.gz
 games*.pgn
+lichess*.pgn*
+*.pgn.zst
+patzer/data/cache/

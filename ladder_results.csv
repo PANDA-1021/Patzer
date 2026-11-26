@@ -1,0 +1,9 @@
+timestamp,setting,elo,ci95,anchor,games_per_pairing
+2026-11-26T06:01:01,400,1101,166,Stockfish UCI_Elo 1320 @ 0.1s/move,20
+2026-11-26T06:01:01,1000,1148,148,Stockfish UCI_Elo 1320 @ 0.1s/move,20
+2026-11-26T06:01:01,1340,1154,126,Stockfish UCI_Elo 1320 @ 0.1s/move,20
+2026-11-26T06:01:01,1500,1259,122,Stockfish UCI_Elo 1320 @ 0.1s/move,20
+2026-11-26T10:34:20,400,1082,492,Stockfish UCI_Elo 1320 @ 0.1s/move,20
+2026-11-26T10:34:20,1000,1207,415,Stockfish UCI_Elo 1320 @ 0.1s/move,20
+2026-11-26T10:34:20,1340,1265,352,Stockfish UCI_Elo 1320 @ 0.1s/move,20
+2026-11-26T10:34:20,1500,1403,404,Stockfish UCI_Elo 1320 @ 0.1s/move,20

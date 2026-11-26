@@ -16,7 +16,7 @@ Most chess engines are built to play the best move. Patzer is built to play a *b
 - Smooth play: the bot thinks in a background thread, pieces slide into place, and the board resizes with the window
 - Promotion picker, move list, undo, flip board
 - Small opening repertoire, so games start like a club player's
-- Elo-based strength model (currently fixed at 1000; the dropdown is built and ready to unlock)
+- Elo dropdown: 1000 is played by the built-in human-like engine, 1340 to 2800 by Stockfish (limited with `UCI_Elo`)
 - Calibration tools that measure the bot's real strength against Stockfish and against itself
 
 ## Quick start
@@ -54,7 +54,14 @@ python main.py
 | **Piece blunders** | A very small chance (`PIECE_BLUNDER_RATE`) of giving up a piece in one move. Never hangs a queen or allows mate. |
 | **Tie window** | Normal moves are chosen among near-equal best moves, so real material gains are always taken. |
 
-The Elo selector is locked at 1000 for now. To unlock it, set `ELO_SELECTOR_ENABLED = True` in `patzer/config.py`.
+### Choosing a strength
+
+| Dropdown value | Played by |
+|---|---|
+| 1000 | The built-in engine described above (the human-like bot) |
+| 1340 to 2800 | Stockfish, limited with its `UCI_Elo` option |
+
+The first time you pick a Stockfish strength, Patzer looks for Stockfish in `$STOCKFISH_PATH`, then in your saved settings, then on your `PATH`. If it can't find it, it asks you to locate the program and remembers the answer in `~/.patzer/settings.json` (outside the project, so it never reaches git). To lock the dropdown, set `ELO_SELECTOR_ENABLED = False` in `patzer/config.py`; the dropdown choices and Stockfish thinking time (`STOCKFISH_MOVETIME`) are there too.
 
 ## Calibration
 
@@ -71,7 +78,7 @@ python -m patzer.tools.ladder --settings 400 700 1000 1340 1500 1700 --games 40 
     --vs-stockfish 1340 1500 --sf-elo 1320 --pgn ladder_games.pgn
 ```
 
-It prints a table and writes `strength_table.json` (latest) and `ladder_results.csv` (history).
+It prints a table and writes `strength_table.json` (latest) and `ladder_results.csv` (history). Games that reach `--max-plies` are adjudicated by material (decisive if one side is up 3 or more pawns, otherwise a draw), so unconverted wins still count.
 
 **`calibrate`: one setting against Stockfish or another setting.**
 
@@ -101,9 +108,10 @@ The suite checks the bot's behaviour on concrete positions (takes a free piece, 
 main.py             Launcher (same as `python -m patzer`)
 calibrate.py        Shortcut to patzer/tools/calibrate.py
 patzer/engine/      Evaluation, search (with quiescence), opening book, strength settings
-patzer/backends/    Move providers behind one interface (built-in engine now)
+patzer/backends/    Move providers behind one interface: built-in engine and Stockfish
 patzer/gui/         The tkinter board and app
-patzer/config.py    Default Elo, dropdown options, animation settings
+patzer/config.py    Default Elo, dropdown options, Stockfish range and thinking time
+patzer/settings.py  Per-user settings (Stockfish location), stored in your home folder
 patzer/tools/       Calibration: calibrate.py (one setting), ladder.py (all settings), stats.py
 tests/              pytest checks
 requirements.txt    Python dependencies
@@ -118,8 +126,7 @@ requirements.txt    Python dependencies
 - [x] Modular layout with swappable engine backends
 - [x] Quiescence search, better evaluation, opening book
 - [ ] Calibrate against Stockfish and replace the estimated Elo formulas
-- [ ] Unlock the Elo dropdown (1340 and up in steps of 50)
-- [ ] Stockfish backend for the high-Elo range
+- [x] Stockfish backend and unlocked Elo dropdown (1000, then 1340 and up in steps of 50)
 - [ ] Transposition table and further speed-ups
 - [ ] Optional: Maia neural-net backend for realistic 1100 to 1900 play
 - [ ] Game clocks, resign and draw offers, PGN save and load, game review
@@ -127,7 +134,8 @@ requirements.txt    Python dependencies
 
 ## Known limitations
 
-- Elo settings are not yet calibrated for the current engine, so "1000" is approximate.
+- The built-in engine's settings between 400 and 1340 currently play at almost the same strength (about 1100 to 1150 on the Stockfish scale used for calibration); only the 1500 setting (deeper search) is clearly stronger. Until weaker profiles are added, treat the built-in engine as one level.
+- Stockfish's Elo labels assume long time controls, so at the default 1 second per move it may play somewhat below its label.
 - The built-in engine is pure Python; the deepest settings (1900 and up) are slow in the middlegame.
 - No clocks or endgame tablebases yet.
 

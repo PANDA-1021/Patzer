@@ -4,6 +4,7 @@ This module is pure logic (no chess dependency), so it is easy to test.
 """
 from __future__ import annotations
 
+import math
 import random
 from typing import Any, NamedTuple
 
@@ -58,8 +59,13 @@ def strength_params(elo: int) -> StrengthParams:
 
 
 def pick_move(scored: list[tuple[Any, float]], params: StrengthParams,
-              rng: Any = None) -> Any:
-    """Choose a move from [(move, score), ...] according to the strength params."""
+              rng: Any = None, prefer_scale: float | None = None) -> Any:
+    """Choose a move from [(move, score), ...] according to the strength params.
+
+    prefer_scale: if given, moves inside the chosen pool are picked with probability
+    proportional to exp(-(deficit)/prefer_scale) instead of uniformly, so sounder moves are
+    favoured (used in the opening, where many moves score almost the same).
+    """
     rng = rng if rng is not None else random
     best = max(s for _, s in scored)
     roll = rng.random()
@@ -69,7 +75,10 @@ def pick_move(scored: list[tuple[Any, float]], params: StrengthParams,
         if pool:
             return rng.choice(pool)
     if roll < params.blunder_prob + params.miss_prob:  # small inaccuracy
-        pool = [m for m, s in scored if s >= best - params.miss_window]
+        pool = [(m, s) for m, s in scored if s >= best - params.miss_window]
     else:  # best move, or a near-equal alternative
-        pool = [m for m, s in scored if s >= best - params.tie_window]
-    return rng.choice(pool)
+        pool = [(m, s) for m, s in scored if s >= best - params.tie_window]
+    if prefer_scale:
+        return rng.choices([m for m, _ in pool],
+                           weights=[math.exp((s - best) / prefer_scale) for _, s in pool], k=1)[0]
+    return rng.choice([m for m, _ in pool])

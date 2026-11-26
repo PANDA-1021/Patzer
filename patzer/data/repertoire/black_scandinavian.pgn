@@ -1,0 +1,10 @@
+[Event "Scandinavian Defense"]
+[Site "?"]
+[Date "????.??.??"]
+[Round "?"]
+[White "?"]
+[Black "?"]
+[Result "*"]
+[Color "Black"]
+
+{ 1.e4 d5. Main line 2.exd5 Qxd5 3.Nc3 Qa5; Modern 2...Nf6 as a secondary option. Gambit sidelines left out. } 1. e4 d5 2. exd5 Qxd5 ( 2... Nf6 3. d4 Nxd5 ( 3... g6 ) 4. Nf3 ( 4. c4 Nb4 ) 4... Bg4 ( 4... g6 ) ) 3. Nc3 Qa5 ( 3... Qd6 4. d4 Nf6 ( 4... c6 ) 5. Nf3 ( 5. Bc4 c6 6. Nge2 Bf5 7. Bf4 Qb4 ) 5... a6 ) ( 3... Qd8 4. d4 Nf6 5. Nf3 c6 ( 5... Bg4 ) ) 4. d4 Nf6 5. Nf3 c6 ( 5... Bf5 6. Ne5 c6 7. g4 ) ( 5... Bg4 6. h3 ) 6. Bc4 Bf5 7. Bd2 e6 *

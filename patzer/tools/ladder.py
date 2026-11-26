@@ -58,7 +58,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--movetime", type=float, default=0.1, help="Stockfish seconds per move")
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) // 2))
     ap.add_argument("--random-plies", type=int, default=4)
-    ap.add_argument("--max-plies", type=int, default=300)
+    ap.add_argument("--max-plies", type=int, default=300,
+                    help="stop after this many plies and adjudicate by material (decisive if one side is up 3+ pawns)")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--csv", default="ladder_results.csv")
     ap.add_argument("--json", default="strength_table.json")

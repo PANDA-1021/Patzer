@@ -1,0 +1,10 @@
+[Event "Wayward Queen Attack vs 1...e5"]
+[Site "?"]
+[Date "????.??.??"]
+[Round "?"]
+[White "?"]
+[Black "?"]
+[Result "*"]
+[Color "White"]
+
+{ 1.e4 e5 2.Qh5. Main line 2...Nc6 3.Bc4 g6 4.Qf3 Nf6 5.Ne2; Kiddie Countergambit 2...Nf6 3.Qxe5+. } 1. e4 e5 2. Qh5 Nc6 ( 2... Nf6 3. Qxe5+ Be7 4. Qf4 O-O ( 4... Nc6 5. e5 Nh5 6. Qf3 g6 7. Nc3 O-O 8. Qd1 d6 ) 5. Nf3 d5 6. e5 Nh5 7. Qa4 ) ( 2... g6 3. Qxe5+ Qe7 ( 3... Ne7 4. Qxh8 ) ( 3... Be7 4. Qxh8 ) 4. Qxh8 ) ( 2... d6 3. Bc4 ) 3. Bc4 g6 ( 3... Nh6 4. d3 g6 5. Qf3 f6 6. Ne2 d5 ) 4. Qf3 Nf6 5. Ne2 Bg7 ( 5... d6 6. h3 Bg7 ) 6. d3 d6 ( 6... O-O 7. Nbc3 d6 8. a3 ) 7. h3 *

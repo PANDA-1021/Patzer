@@ -38,6 +38,7 @@ import chess.engine
 import chess.pgn
 
 from patzer.backends import make_backend
+from patzer.engine.evaluation import PIECE_VALUES
 from patzer.tools.stats import summarize
 
 # Set the STOCKFISH_PATH environment variable once, or pass --stockfish each time.
@@ -46,6 +47,15 @@ SF_MIN_ELO, SF_MAX_ELO = 1320, 3190
 
 
 # ----------------------------------------------------------------- one game --
+ADJUDICATE_MARGIN = 300   # at the move limit, a side up this much material (centipawns) is declared the winner
+
+
+def material_balance(board: chess.Board) -> int:
+    """White's material minus Black's, in centipawns."""
+    return sum(PIECE_VALUES[p.piece_type] * (1 if p.color == chess.WHITE else -1)
+               for p in board.piece_map().values())
+
+
 def play_game(task: dict) -> tuple[float, str, str, int]:
     """Play one game. Returns (bot's score, PGN text, how it ended, plies played)."""
     random.seed(task["seed"])
@@ -79,7 +89,13 @@ def play_game(task: dict) -> tuple[float, str, str, int]:
             engine.quit()
 
     finished = board.is_game_over(claim_draw=True)
-    result = board.result(claim_draw=True) if finished else "1/2-1/2"  # adjudicate long games
+    adjudicated = False
+    if finished:
+        result = board.result(claim_draw=True)
+    else:  # move limit reached: decide by material so unconverted wins still count
+        balance = material_balance(board)
+        adjudicated = abs(balance) >= ADJUDICATE_MARGIN
+        result = "1-0" if balance >= ADJUDICATE_MARGIN else "0-1" if balance <= -ADJUDICATE_MARGIN else "1/2-1/2"
     bot_white = bot_color == chess.WHITE
     if result == "1-0":
         score = 1.0 if bot_white else 0.0
@@ -98,8 +114,8 @@ def play_game(task: dict) -> tuple[float, str, str, int]:
         outcome = board.outcome(claim_draw=True)
         ended = outcome.termination.name.lower() if outcome else "unknown"
     else:
-        ended = "move_limit"
-        game.headers["Termination"] = "adjudicated draw (move limit)"
+        ended = "adjudicated" if adjudicated else "move_limit"
+        game.headers["Termination"] = "adjudicated (material)" if adjudicated else "adjudicated draw (move limit)"
     game.headers["Termination"] = game.headers.get("Termination", ended)
     return score, str(game), ended, plies
 
@@ -131,7 +147,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) // 2),
                     help="parallel games (default: half your CPU cores)")
     ap.add_argument("--random-plies", type=int, default=4, help="random opening plies per game pair")
-    ap.add_argument("--max-plies", type=int, default=300, help="adjudicate a draw after this many plies")
+    ap.add_argument("--max-plies", type=int, default=300, help="stop after this many plies and adjudicate by material (decisive if one side is up 3+ pawns)")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--csv", default="calibration_results.csv")
     ap.add_argument("--pgn", default=None, help="optional file to append all games to (for game review)")

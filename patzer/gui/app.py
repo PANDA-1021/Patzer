@@ -7,14 +7,16 @@ import sys
 import threading
 import time
 import tkinter as tk
+from tkinter import filedialog
 from tkinter import font as tkfont
 from tkinter import messagebox, ttk
 
 import chess
 
-from patzer.backends import make_backend
+from patzer.backends import BuiltinBackend, make_player, uses_stockfish
 from patzer.config import (ANIMATION_FRAME_MS, ANIMATION_FRAMES, DEFAULT_ELO,
                            ELO_OPTIONS, ELO_SELECTOR_ENABLED, MIN_THINK_SECONDS)
+from patzer.settings import find_stockfish, remember_stockfish
 
 # Board colours
 LIGHT, DARK = "#f0d9b5", "#b58863"
@@ -51,7 +53,8 @@ class ChessApp:
         root.title("Patzer")
         root.minsize(760, 560)
 
-        self.bot = make_backend(DEFAULT_ELO)
+        self.bot_elo = DEFAULT_ELO
+        self.bot = self._build_player(DEFAULT_ELO, interactive=False) or BuiltinBackend(DEFAULT_ELO)
         self.board = chess.Board()
         self.human_color = chess.WHITE
         self.flipped = False
@@ -116,8 +119,8 @@ class ChessApp:
             width=10, state="readonly" if ELO_SELECTOR_ENABLED else "disabled")
         self.elo_combo.pack(anchor="w")
         self.elo_combo.bind("<<ComboboxSelected>>", self.on_elo_change)
-        if not ELO_SELECTOR_ENABLED:
-            ttk.Label(elo_box, text="Locked for now", foreground="#888").pack(anchor="w", pady=(4, 0))
+        self.engine_var = tk.StringVar(value=self.engine_text())
+        ttk.Label(elo_box, textvariable=self.engine_var, foreground="#888").pack(anchor="w", pady=(4, 0))
 
         btns = ttk.Frame(panel)
         btns.pack(fill="x", pady=(0, 10))
@@ -458,8 +461,49 @@ class ChessApp:
         self.human_color = new
         self.new_game()
 
+    def engine_text(self) -> str:
+        return f"Engine: {self.bot.name}"
+
+    def _build_player(self, elo: int, interactive: bool):
+        """Create the opponent for `elo`, or return None (after telling the user why)."""
+        path, from_dialog = None, False
+        if uses_stockfish(elo):
+            path = find_stockfish()
+            if path is None and interactive:
+                messagebox.showinfo(
+                    "Stockfish needed",
+                    "Ratings of 1340 and above are played by Stockfish.\n\n"
+                    "Next, please locate the Stockfish program "
+                    "(for example stockfish-windows-x86-64-universal.exe).")
+                path = filedialog.askopenfilename(
+                    title="Locate Stockfish", filetypes=[("Programs", "*.exe"), ("All files", "*")]) or None
+                from_dialog = path is not None
+            if path is None:
+                return None
+        try:
+            player = make_player(elo, path)
+        except Exception as exc:
+            if interactive:
+                messagebox.showerror("Could not start the engine", str(exc))
+            return None
+        if from_dialog:
+            remember_stockfish(path)  # only saved once it has actually started
+        return player
+
     def on_elo_change(self, _event=None) -> None:
-        self.bot.set_elo(int(self.elo_var.get()))
+        if self.thinking or self.animating:  # never swap engines in the middle of a move
+            self.elo_var.set(str(self.bot_elo))
+            return
+        elo = int(self.elo_var.get())
+        if elo == self.bot_elo:
+            return
+        player = self._build_player(elo, interactive=True)
+        if player is None:
+            self.elo_var.set(str(self.bot_elo))
+            return
+        old, self.bot, self.bot_elo = self.bot, player, elo
+        old.close()
+        self.engine_var.set(self.engine_text())
 
     def flip(self) -> None:
         self.flipped = not self.flipped

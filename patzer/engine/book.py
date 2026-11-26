@@ -7,10 +7,14 @@ book, and how often it "forgets" a move, depend on its Elo (see strength.py).
 """
 from __future__ import annotations
 
+import json
 import random
 from functools import lru_cache
+from pathlib import Path
 
 import chess
+
+HUMAN_BOOK_PATH = Path(__file__).resolve().parent.parent / "data" / "book_human.json"
 
 # (weight, line). Keep lines to <= 14 plies. A test checks that every line is legal.
 REPERTOIRE: list[tuple[int, str]] = [
@@ -65,9 +69,20 @@ def build_book() -> tuple[dict[str, dict[str, int]], list[str]]:
     return book, bad
 
 
+def load_human_book(path: Path = HUMAN_BOOK_PATH) -> dict[str, dict[str, int]]:
+    """Opening moves mined from real games by `fit_human.py book` ({} if not built)."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 @lru_cache(maxsize=1)
 def _book() -> dict[str, dict[str, int]]:
-    return build_book()[0]
+    book = build_book()[0]
+    book.update(load_human_book())   # human statistics win wherever they cover a position
+    return book
 
 
 def book_move(board: chess.Board, max_plies: int, forget_prob: float,
