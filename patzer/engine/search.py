@@ -6,10 +6,13 @@ import math
 import chess
 
 from .evaluation import PIECE_VALUES, evaluate
+from .strength import PIECE_LOSS_RANGE
 
 MATE = 100_000
 SCORE_CLAMP = 1500.0     # root scores are clamped so mate scores don't dominate
 QUIESCENCE_DEPTH = 6     # max extra capture plies searched at the horizon
+DELTA_MARGIN = 200       # quiescence skips captures that cannot lift the score within this margin
+ROOT_WINDOW = PIECE_LOSS_RANGE[1] + 1   # root moves worse than best by more than this are never picked
 
 
 def _move_key(board: chess.Board, move: chess.Move) -> int:
@@ -33,7 +36,9 @@ def order_captures(board: chess.Board) -> list[chess.Move]:
 def quiescence(board: chess.Board, alpha: float, beta: float, ply: int,
                qdepth: int = QUIESCENCE_DEPTH) -> float:
     """Resolve pending captures so the static evaluation is never taken mid-exchange."""
-    if board.is_check():
+    in_check = board.is_check()
+    stand_pat = -math.inf
+    if in_check:
         moves = order_moves(board)          # must answer the check: look at every evasion
         if not moves:
             return -MATE + ply
@@ -49,6 +54,10 @@ def quiescence(board: chess.Board, alpha: float, beta: float, ply: int,
         moves = order_captures(board)
 
     for move in moves:
+        if not in_check:  # delta pruning: this capture cannot possibly raise the score enough
+            victim = board.piece_type_at(move.to_square) or chess.PAWN
+            if stand_pat + PIECE_VALUES[victim] + DELTA_MARGIN < alpha:
+                continue
         board.push(move)
         score = -quiescence(board, -beta, -alpha, ply + 1, qdepth - 1)
         board.pop()
@@ -84,11 +93,20 @@ def negamax(board: chess.Board, depth: int, alpha: float, beta: float, ply: int)
 
 
 def score_root_moves(board: chess.Board, depth: int) -> list[tuple[chess.Move, float]]:
-    """Exact score of every legal move (full window), from the mover's perspective."""
+    """Score every legal move from the mover's perspective.
+
+    Scores are exact for every move within ROOT_WINDOW of the best one, which is all the
+    move picker ever looks at. Clearly worse moves come back as an upper bound (still far
+    below the best), which lets the search prune them quickly.
+    """
     scored = []
-    for move in list(board.legal_moves):
+    best = -math.inf
+    for move in order_moves(board):
+        floor = best - ROOT_WINDOW if best > -math.inf else -math.inf
         board.push(move)
-        s = -negamax(board, depth - 1, -math.inf, math.inf, 1)
+        s = -negamax(board, depth - 1, -math.inf, -floor, 1)
         board.pop()
-        scored.append((move, max(-SCORE_CLAMP, min(SCORE_CLAMP, s))))
+        s = max(-SCORE_CLAMP, min(SCORE_CLAMP, s))
+        scored.append((move, s))
+        best = max(best, s)
     return scored

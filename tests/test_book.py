@@ -30,7 +30,7 @@ def test_book_replies_as_black_after_e4():
 
 def test_out_of_book_returns_none():
     board = chess.Board()
-    for san in ("a3", "h6", "Na3"):
+    for san in ("a3", "h6", "Nc3"):
         board.push_san(san)
     assert book_move(board, max_plies=10, forget_prob=0.0) is None
 
@@ -57,6 +57,7 @@ def test_forgetting_makes_it_think_for_itself():
 
 def test_backend_plays_a_sensible_first_move():
     random.seed(0)
-    first = {make_backend(1000).choose_move(chess.Board()) for _ in range(30)}
+    # The bot "forgets" the book about 5% of the time on purpose, so require most - not all - replies to be sensible.
     sensible = {chess.Move.from_uci(m) for m in ("e2e4", "d2d4", "c2c4", "g1f3", "e2e3")}
-    assert first <= sensible
+    moves = [make_backend(1000).choose_move(chess.Board()) for _ in range(30)]
+    assert sum(m in sensible for m in moves) >= 24

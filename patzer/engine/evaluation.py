@@ -36,49 +36,66 @@ def _mop_up(attacker_king: int, defender_king: int) -> float:
     return 10 * center_dist(defender_king) + 4 * (7 - chess.square_distance(attacker_king, defender_king))
 
 
+def _build_tables() -> dict[tuple[bool, int], list[float]]:
+    """Per-square value of each (colour, piece type), signed (+ for White, - for Black).
+
+    Everything that depends only on *where* a piece stands is folded in here once,
+    so evaluate() is just table lookups.
+    """
+    tables: dict[tuple[bool, int], list[float]] = {}
+    for color in (chess.WHITE, chess.BLACK):
+        for pt in chess.PIECE_TYPES:
+            row = []
+            for sq in chess.SQUARES:
+                value = float(PIECE_VALUES[pt])
+                centrality = 3.5 - center_dist(sq)  # 0 (edge) .. 3 (center)
+                if pt in (chess.KNIGHT, chess.BISHOP):
+                    value += centrality * 10
+                    if sq in _HOME_MINORS[color]:
+                        value -= UNDEVELOPED_PENALTY
+                elif pt == chess.PAWN:
+                    rank = chess.square_rank(sq)
+                    progress = rank if color == chess.WHITE else 7 - rank
+                    value += progress * 6 + centrality * 2
+                    if sq in (chess.D4, chess.E4, chess.D5, chess.E5):
+                        value += CENTER_PAWN_BONUS
+                row.append(value if color == chess.WHITE else -value)
+            tables[(color, pt)] = row
+    return tables
+
+
+_TABLES = _build_tables()
+_HOME_MASK = {c: sum(1 << sq for sq in _HOME_MINORS[c]) for c in (chess.WHITE, chess.BLACK)}
+_NOT_QUEEN_HOME = {c: ~(1 << _QUEEN_HOME[c]) for c in (chess.WHITE, chess.BLACK)}
+_HEAVY_TYPES = (chess.KNIGHT, chess.BISHOP, chess.ROOK, chess.QUEEN)
+
+
 def evaluate(board: chess.Board) -> float:
     """Static score in centipawns from the side-to-move's perspective."""
     score = 0.0
     piece_material = 0
-    wk = bk = 0
-    undeveloped = {chess.WHITE: 0, chess.BLACK: 0}
-    queen_out = {chess.WHITE: False, chess.BLACK: False}
-    for sq, piece in board.piece_map().items():
-        pt = piece.piece_type
-        value = PIECE_VALUES[pt]
-        centrality = 3.5 - center_dist(sq)  # 0 (edge) .. 3 (center)
-        if pt in (chess.KNIGHT, chess.BISHOP):
-            value += centrality * 10
-            if sq in _HOME_MINORS[piece.color]:
-                value -= UNDEVELOPED_PENALTY
-                undeveloped[piece.color] += 1
-        elif pt == chess.QUEEN:
-            if sq != _QUEEN_HOME[piece.color]:
-                queen_out[piece.color] = True
-        elif pt == chess.PAWN:
-            rank = chess.square_rank(sq)
-            progress = rank if piece.color == chess.WHITE else 7 - rank
-            value += progress * 6 + centrality * 2
-            if sq in (chess.D4, chess.E4, chess.D5, chess.E5):
-                value += CENTER_PAWN_BONUS
-        elif pt == chess.KING:
-            if piece.color == chess.WHITE:
-                wk = sq
-            else:
-                bk = sq
-        if pt not in (chess.PAWN, chess.KING):
-            piece_material += PIECE_VALUES[pt]
-        score += value if piece.color == chess.WHITE else -value
+    for color in (chess.WHITE, chess.BLACK):
+        for pt in chess.PIECE_TYPES:
+            mask = board.pieces_mask(pt, color)
+            if not mask:
+                continue
+            row = _TABLES[(color, pt)]
+            for sq in chess.scan_forward(mask):
+                score += row[sq]
+            if pt in _HEAVY_TYPES:
+                piece_material += PIECE_VALUES[pt] * mask.bit_count()
 
     if piece_material > 1400:  # opening / middlegame: develop, castle, keep the queen home early
         for color, sign in ((chess.WHITE, 1), (chess.BLACK, -1)):
-            king_sq = wk if color == chess.WHITE else bk
+            king_sq = board.king(color)
             if king_sq in _CASTLED_KING[color]:
                 score += sign * CASTLED_BONUS
-            if queen_out[color] and undeveloped[color] >= 2:
-                score -= sign * EARLY_QUEEN_PENALTY
-
-    if piece_material <= 1400:  # endgame: help the stronger side actually finish
+            if board.pieces_mask(chess.QUEEN, color) & _NOT_QUEEN_HOME[color]:
+                minors = board.pieces_mask(chess.KNIGHT, color) | board.pieces_mask(chess.BISHOP, color)
+                if (minors & _HOME_MASK[color]).bit_count() >= 2:
+                    score -= sign * EARLY_QUEEN_PENALTY
+    else:  # endgame: help the stronger side actually finish
+        wk, bk = board.king(chess.WHITE), board.king(chess.BLACK)
         if score > 150:
             score += _mop_up(wk, bk)
         elif score < -150:

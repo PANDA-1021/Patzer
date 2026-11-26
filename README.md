@@ -2,9 +2,9 @@
 
 **A chess bot that plays like a human at the Elo you choose.**
 
-Most chess engines are built to play the best move. Patzer is built to play a *believable* move: it looks a limited number of moves ahead, usually plays sensibly, and now and then makes the kind of small mistake a real club player makes. Pick a strength, play a game, and get an opponent that feels beatable instead of either hopeless or brutal.
+Most chess engines are built to play the best move. Patzer is built to play a *believable* move: it follows an opening repertoire, looks a limited number of moves ahead, usually plays sensibly, and now and then makes the kind of small mistake a real club player makes. Pick a strength, play a game, and get an opponent that feels beatable instead of either hopeless or brutal.
 
-> **Status: early development (v0.1).** The bot and GUI work as designed, but the Elo settings are still estimates and have not been calibrated against a reference engine yet. See [Roadmap](#roadmap).
+> **Status: early development.** The bot, GUI, test suite and calibration tools work, but the Elo labels have not yet been calibrated against the current engine. See the [Roadmap](#roadmap).
 
 ---
 
@@ -15,16 +15,17 @@ Most chess engines are built to play the best move. Patzer is built to play a *b
 - Play as **White or Black** with one click; the board flips automatically
 - Smooth play: the bot thinks in a background thread, pieces slide into place, and the board resizes with the window
 - Promotion picker, move list, undo, flip board
+- Small opening repertoire, so games start like a club player's
 - Elo-based strength model (currently fixed at 1000; the dropdown is built and ready to unlock)
-- Calibration tool that plays the bot against Stockfish to measure its real strength
+- Calibration tools that measure the bot's real strength against Stockfish and against itself
 
 ## Quick start
 
 Requires Python 3.10 or newer. `tkinter` ships with most Python installs (on some Linux distros: `sudo apt install python3-tk`).
 
 ```bash
-git clone <(https://github.com/PANDA-1021/Patzer/)> patzer
-cd patzer
+git clone https://github.com/PANDA-1021/Patzer.git
+cd Patzer
 pip install -r requirements.txt
 python main.py
 ```
@@ -41,7 +42,10 @@ python main.py
 
 ## How the bot plays
 
-The bot does a shallow search over a simple evaluation (material plus small positional bonuses), then chooses its move on purpose imperfectly. Strength is controlled by a few settings derived from a target Elo (see `strength_params` in `patzer/engine/strength.py`):
+1. **Opening book:** it plays a weighted repertoire for the first several moves, and occasionally "forgets" it (more often at lower Elo).
+2. **Search:** an alpha-beta search a few moves deep with quiescence, so it resolves captures properly instead of stopping mid-exchange.
+3. **Evaluation:** material plus small positional terms (centre control, development, castling, king hunting in endgames).
+4. **Deliberate imperfection:** strength settings derived from the target Elo (see `strength_params` in `patzer/engine/strength.py`):
 
 | Setting | What it does |
 |---|---|
@@ -54,36 +58,54 @@ The Elo selector is locked at 1000 for now. To unlock it, set `ELO_SELECTOR_ENAB
 
 ## Calibration
 
-The mapping from setting to real strength is currently a hand-tuned estimate. `patzer/tools/calibrate.py` measures it by playing many games against Stockfish (limited with `UCI_Elo`) or against another bot setting, alternating colors on identical random openings, and converting the score into an Elo estimate with a 95% confidence interval.
+The mapping from setting to real strength is still a hand-tuned estimate. Two tools measure it:
+
+**`ladder`: measure every setting in one run (recommended).** Neighbouring settings play each other and Stockfish; one rating per setting is fitted by maximum likelihood. Set the `STOCKFISH_PATH` environment variable once (or pass `--stockfish`).
 
 ```bash
-# quick smoke test
-python -m patzer.tools.calibrate --stockfish "path/to/stockfish" --bot-elo 1340 --games 2 --workers 1
+# quick check, bot vs bot only, no Stockfish needed
+python -m patzer.tools.ladder --settings 400 1000 --games 4 --workers 1 --max-plies 100
 
-# a real sweep, saving games for review
-python -m patzer.tools.calibrate --stockfish "path/to/stockfish" --bot-elo 1340 1500 1700 --games 40 --pgn games.pgn
+# the real run, anchored to Stockfish at 1320
+python -m patzer.tools.ladder --settings 400 700 1000 1340 1500 1700 --games 40 \
+    --vs-stockfish 1340 1500 --sf-elo 1320 --pgn ladder_games.pgn
+```
 
-# measure a low setting against an already-calibrated bot anchor
+It prints a table and writes `strength_table.json` (latest) and `ladder_results.csv` (history).
+
+**`calibrate`: one setting against Stockfish or another setting.**
+
+```bash
+python -m patzer.tools.calibrate --bot-elo 1340 1500 --games 40 --pgn games.pgn
 python -m patzer.tools.calibrate --bot-elo 1000 --opp-bot 1340 --opp-rating 1340 --games 40
 ```
 
-Results are appended to `calibration_results.csv`. Install Stockfish from [stockfishchess.org](https://stockfishchess.org/download/) (or `brew install stockfish` / `sudo apt install stockfish`).
+(`python calibrate.py ...` still works as a shortcut.) Install Stockfish from [stockfishchess.org](https://stockfishchess.org/download/) (or `brew install stockfish` / `sudo apt install stockfish`).
 
 **Caveats**
 
-- Stockfish's `UCI_Elo` floor is 1320, so low settings must be measured against a bot anchor rather than Stockfish directly. Results near 0% or 100% are flagged as unreliable.
-- Stockfish's Elo labels assume long time controls; at short move times it plays weaker than labeled. Treat results as a consistent relative scale, not an exact Lichess or chess.com rating.
+- Stockfish's `UCI_Elo` floor is 1320, so low settings are measured through chains of bot-vs-bot games. Results near 0% or 100% are flagged as weak evidence.
+- Stockfish's Elo labels assume long time controls; at short move times it plays weaker than labelled. Treat results as a consistent relative scale, not an exact Lichess or chess.com rating.
+
+## Testing
+
+```bash
+pytest
+```
+
+The suite checks the bot's behaviour on concrete positions (takes a free piece, plays mate in one, never hangs its queen, handles promotion, castling and en passant), the opening book, the evaluation function, and the rating maths.
 
 ## Project layout
 
 ```
 main.py             Launcher (same as `python -m patzer`)
-patzer/engine/      Evaluation, search (with quiescence) and strength settings
+calibrate.py        Shortcut to patzer/tools/calibrate.py
+patzer/engine/      Evaluation, search (with quiescence), opening book, strength settings
 patzer/backends/    Move providers behind one interface (built-in engine now)
 patzer/gui/         The tkinter board and app
 patzer/config.py    Default Elo, dropdown options, animation settings
-patzer/tools/       Calibration against Stockfish or another bot setting
-tests/              pytest checks (run `pytest`)
+patzer/tools/       Calibration: calibrate.py (one setting), ladder.py (all settings), stats.py
+tests/              pytest checks
 requirements.txt    Python dependencies
 ```
 
@@ -91,22 +113,23 @@ requirements.txt    Python dependencies
 
 - [x] Playable GUI with side switching and smooth animation
 - [x] Elo-based strength model with human-style mistakes
-- [x] Calibration harness
-- [ ] Automated tests for the bot's behavior
-- [ ] Restructure into modules with swappable engine backends
+- [x] Calibration tools (single setting and full ladder)
+- [x] Automated tests
+- [x] Modular layout with swappable engine backends
+- [x] Quiescence search, better evaluation, opening book
 - [ ] Calibrate against Stockfish and replace the estimated Elo formulas
-- [ ] Stronger engine: quiescence search, transposition table, better evaluation
-- [ ] Stockfish backend for the high-Elo range
 - [ ] Unlock the Elo dropdown (1340 and up in steps of 50)
+- [ ] Stockfish backend for the high-Elo range
+- [ ] Transposition table and further speed-ups
 - [ ] Optional: Maia neural-net backend for realistic 1100 to 1900 play
 - [ ] Game clocks, resign and draw offers, PGN save and load, game review
 - [ ] Windows `.exe` release
 
 ## Known limitations
 
-- Elo settings are not yet calibrated, so "1000" is approximate.
-- The built-in engine is pure Python; settings above about 1900 search deeper and will feel slow.
-- No clocks, opening book, or endgame tablebases yet.
+- Elo settings are not yet calibrated for the current engine, so "1000" is approximate.
+- The built-in engine is pure Python; the deepest settings (1900 and up) are slow in the middlegame.
+- No clocks or endgame tablebases yet.
 
 ## Built with
 
